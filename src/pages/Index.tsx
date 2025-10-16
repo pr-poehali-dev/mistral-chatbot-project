@@ -65,6 +65,17 @@ const Index = () => {
     setInput('');
     setIsLoading(true);
 
+    const aiMessageId = (Date.now() + 1).toString();
+    const aiMessage: Message = {
+      id: aiMessageId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+    };
+
+    const messagesWithAI = [...updatedMessages, aiMessage];
+    setCurrentSession({ ...currentSession, messages: messagesWithAI });
+
     try {
       const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
         method: 'POST',
@@ -74,6 +85,7 @@ const Index = () => {
         },
         body: JSON.stringify({
           model: 'mistral-small-latest',
+          stream: true,
           messages: [
             { role: 'system', content: systemPrompt },
             ...updatedMessages.map(m => ({ role: m.role, content: m.content })),
@@ -81,21 +93,56 @@ const Index = () => {
         }),
       });
 
-      const data = await response.json();
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: data.choices[0].message.content,
-        timestamp: new Date(),
-      };
+      if (!response.body) throw new Error('No response body');
 
-      const finalMessages = [...updatedMessages, aiMessage];
-      const updatedSession = { ...currentSession, messages: finalMessages };
-      setCurrentSession(updatedSession);
-      
-      setSessions(prev => prev.map(s => s.id === updatedSession.id ? updatedSession : s));
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let accumulatedContent = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') continue;
+
+            try {
+              const parsed = JSON.parse(data);
+              const content = parsed.choices[0]?.delta?.content;
+              
+              if (content) {
+                accumulatedContent += content;
+                
+                setCurrentSession(prev => ({
+                  ...prev,
+                  messages: prev.messages.map(m =>
+                    m.id === aiMessageId ? { ...m, content: accumulatedContent } : m
+                  ),
+                }));
+              }
+            } catch (e) {
+              continue;
+            }
+          }
+        }
+      }
+
+      setSessions(prev => prev.map(s => 
+        s.id === currentSession.id 
+          ? { ...s, messages: messagesWithAI.map(m => m.id === aiMessageId ? { ...m, content: accumulatedContent } : m) } 
+          : s
+      ));
     } catch (error) {
       console.error('Error:', error);
+      setCurrentSession(prev => ({
+        ...prev,
+        messages: prev.messages.filter(m => m.id !== aiMessageId),
+      }));
     } finally {
       setIsLoading(false);
     }
