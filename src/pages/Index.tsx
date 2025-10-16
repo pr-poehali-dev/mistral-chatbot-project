@@ -53,7 +53,7 @@ const Index = () => {
     { id: '2', title: 'Креативный писатель', content: 'Ты креативный писатель. Помоги создать интересный текст.' },
   ]);
   
-  const [apiKey, setApiKey] = useState('GkzSKt3IGn02tS5qFOi1qS51vfgw2zOE');
+  const [apiKey, setApiKey] = useState('');
   const [userName, setUserName] = useState('Пользователь');
   const [systemPrompt, setSystemPrompt] = useState('Ты полезный ИИ-ассистент.');
   const [thinkingMode, setThinkingMode] = useState(false);
