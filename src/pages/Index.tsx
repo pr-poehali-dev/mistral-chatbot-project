@@ -92,9 +92,9 @@ const Index = () => {
 
     // Check if the last message has an image
     const hasImage = !!userMessage.image;
-    // Use vision model when image is present, disable thinking mode for vision
+    // Use vision model when image is present
     const modelToUse = hasImage ? visionModel : selectedModel;
-    const useThinking = thinkingMode && !hasImage;
+    const useThinking = thinkingMode;
 
     const aiMessageId = (Date.now() + 1).toString();
     const aiMessage: Message = {
