@@ -98,7 +98,17 @@ const Index = () => {
             model: selectedModel,
             stream: true,
             messages: [
-              { role: 'system', content: 'Ты рассуждаешь вслух. Опиши свой процесс мышления пошагово: что ты понял из вопроса, какие варианты рассматриваешь, как будешь отвечать.' },
+              { role: 'system', content: `Ты MistralThink - режим глубокого анализа. Рассуждай вслух подробно и структурированно:
+
+1. **Анализ запроса**: Что именно спрашивает пользователь? Какие ключевые слова? Какой контекст?
+2. **Проверка предположений**: Какие допущения можно сделать? Что может быть неоднозначным?
+3. **Варианты решения**: Перечисли все возможные подходы. Плюсы и минусы каждого.
+4. **Проверка на ошибки**: Какие подводные камни? Что может пойти не так?
+5. **Логическая цепочка**: Пошаговое рассуждение от проблемы к решению.
+6. **Выбор лучшего подхода**: Почему этот вариант оптимальный?
+7. **План ответа**: Как структурировать ответ для максимальной ясности?
+
+Будь максимально детальным. Проверяй каждый шаг на логичность и корректность.` },
               ...updatedMessages.map(m => ({ role: m.role, content: m.content })),
             ],
           }),
@@ -361,10 +371,31 @@ const Index = () => {
                 ))}
               </div>
 
-              <Button onClick={createNewChat} className="gap-2">
-                <Icon name="Plus" size={18} />
-                Новый чат
-              </Button>
+              <div className="flex gap-2">
+                {currentSession.messages.length > 0 && (
+                  <Button 
+                    variant="ghost" 
+                    size="icon"
+                    onClick={() => {
+                      const chatText = currentSession.messages
+                        .map(m => `${m.role === 'user' ? 'Пользователь' : 'Ассистент'}: ${m.content}`)
+                        .join('\n\n');
+                      const blob = new Blob([chatText], { type: 'text/plain' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `chat-${new Date().toISOString()}.txt`;
+                      a.click();
+                    }}
+                  >
+                    <Icon name="Download" size={18} />
+                  </Button>
+                )}
+                <Button onClick={createNewChat} className="gap-2">
+                  <Icon name="Plus" size={18} />
+                  Новый чат
+                </Button>
+              </div>
             </div>
           </header>
 
@@ -432,6 +463,18 @@ const Index = () => {
                                 {message.content}
                               </ReactMarkdown>
                             </div>
+                            <div className="flex items-center gap-2 mt-3">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(message.content);
+                                }}
+                                className="h-7 px-2 text-xs"
+                              >
+                                <Icon name="Copy" size={14} />
+                              </Button>
+                            </div>
                             <span className="text-xs opacity-70 mt-2 block">
                               {message.timestamp.toLocaleTimeString('ru-RU', {
                                 hour: '2-digit',
@@ -457,7 +500,26 @@ const Index = () => {
                 </ScrollArea>
 
                 <div className="border-t border-border/50 p-4 backdrop-blur-sm bg-background/80">
-                  <div className="max-w-3xl mx-auto flex gap-2">
+                  <div className="max-w-3xl mx-auto space-y-3">
+                    <div className="flex items-center justify-between px-1">
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          id="thinking-toggle"
+                          checked={thinkingMode}
+                          onCheckedChange={setThinkingMode}
+                        />
+                        <Label htmlFor="thinking-toggle" className="cursor-pointer flex items-center gap-2 text-sm">
+                          <Icon name="Brain" size={16} className="text-primary" />
+                          <span className="font-medium">MistralThink</span>
+                        </Label>
+                      </div>
+                      {thinkingMode && (
+                        <span className="text-xs text-muted-foreground animate-fade-in">
+                          Режим глубоких размышлений
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
                     <Textarea
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
@@ -478,6 +540,7 @@ const Index = () => {
                     >
                       <Icon name="Send" size={20} />
                     </Button>
+                  </div>
                   </div>
                 </div>
               </div>
