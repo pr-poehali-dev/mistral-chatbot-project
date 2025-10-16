@@ -138,6 +138,7 @@ const Index = () => {
           body: JSON.stringify({
             model: modelToUse,
             stream: true,
+            safe_prompt: false,
             messages: [
               { role: 'system', content: `Ты MistralThink - режим глубокого анализа. Рассуждай вслух подробно и структурированно:
 
@@ -203,6 +204,7 @@ const Index = () => {
           body: JSON.stringify({
             model: modelToUse,
             stream: true,
+            safe_prompt: false,
             messages: [
               { role: 'system', content: systemPrompt },
               ...formatMessagesForAPI(updatedMessages),
@@ -266,6 +268,7 @@ const Index = () => {
           body: JSON.stringify({
             model: modelToUse,
             stream: true,
+            safe_prompt: false,
             messages: [
               { role: 'system', content: systemPrompt },
               ...formatMessagesForAPI(updatedMessages),
