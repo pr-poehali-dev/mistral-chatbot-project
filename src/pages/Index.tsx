@@ -18,6 +18,7 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   thinking?: string;
+  image?: string;
   timestamp: Date;
 }
 
@@ -57,37 +58,77 @@ const Index = () => {
   const [systemPrompt, setSystemPrompt] = useState('Ты полезный ИИ-ассистент.');
   const [thinkingMode, setThinkingMode] = useState(false);
   const [selectedModel, setSelectedModel] = useState('mistral-small-latest');
+  const [visionModel, setVisionModel] = useState('pixtral-12b-2409');
   const [expandedThinking, setExpandedThinking] = useState<Record<string, boolean>>({});
+  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setUploadedImage(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
 
   const sendMessage = async () => {
-    if (!input.trim() || isLoading) return;
+    if ((!input.trim() && !uploadedImage) || isLoading) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input,
+      content: input || 'Что на изображении?',
+      image: uploadedImage || undefined,
       timestamp: new Date(),
     };
 
     const updatedMessages = [...currentSession.messages, userMessage];
     setCurrentSession({ ...currentSession, messages: updatedMessages });
     setInput('');
+    setUploadedImage(null);
     setIsLoading(true);
+
+    // Check if the last message has an image
+    const hasImage = !!userMessage.image;
+    // Use vision model when image is present, disable thinking mode for vision
+    const modelToUse = hasImage ? visionModel : selectedModel;
+    const useThinking = thinkingMode && !hasImage;
 
     const aiMessageId = (Date.now() + 1).toString();
     const aiMessage: Message = {
       id: aiMessageId,
       role: 'assistant',
       content: '',
-      thinking: thinkingMode ? '' : undefined,
+      thinking: useThinking ? '' : undefined,
       timestamp: new Date(),
     };
 
     const messagesWithAI = [...updatedMessages, aiMessage];
     setCurrentSession({ ...currentSession, messages: messagesWithAI });
 
+    // Format messages for API
+    const formatMessagesForAPI = (messages: Message[]) => {
+      return messages.map(m => {
+        if (m.image) {
+          // Vision API format with image
+          return {
+            role: m.role,
+            content: [
+              { type: 'text', text: m.content },
+              { type: 'image_url', image_url: m.image }
+            ]
+          };
+        } else {
+          // Regular text format
+          return { role: m.role, content: m.content };
+        }
+      });
+    };
+
     try {
-      if (thinkingMode) {
+      if (useThinking) {
         const thinkingResponse = await fetch('https://api.mistral.ai/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -95,7 +136,7 @@ const Index = () => {
             Authorization: `Bearer ${apiKey}`,
           },
           body: JSON.stringify({
-            model: selectedModel,
+            model: modelToUse,
             stream: true,
             messages: [
               { role: 'system', content: `Ты MistralThink - режим глубокого анализа. Рассуждай вслух подробно и структурированно:
@@ -109,7 +150,7 @@ const Index = () => {
 7. **План ответа**: Как структурировать ответ для максимальной ясности?
 
 Будь максимально детальным. Проверяй каждый шаг на логичность и корректность.` },
-              ...updatedMessages.map(m => ({ role: m.role, content: m.content })),
+              ...formatMessagesForAPI(updatedMessages),
             ],
           }),
         });
@@ -160,11 +201,11 @@ const Index = () => {
             Authorization: `Bearer ${apiKey}`,
           },
           body: JSON.stringify({
-            model: selectedModel,
+            model: modelToUse,
             stream: true,
             messages: [
               { role: 'system', content: systemPrompt },
-              ...updatedMessages.map(m => ({ role: m.role, content: m.content })),
+              ...formatMessagesForAPI(updatedMessages),
               { role: 'assistant', content: `Мои размышления: ${accumulatedThinking}` },
               { role: 'user', content: 'Теперь дай краткий и понятный ответ на основе своих размышлений.' },
             ],
@@ -223,11 +264,11 @@ const Index = () => {
             Authorization: `Bearer ${apiKey}`,
           },
           body: JSON.stringify({
-            model: selectedModel,
+            model: modelToUse,
             stream: true,
             messages: [
               { role: 'system', content: systemPrompt },
-              ...updatedMessages.map(m => ({ role: m.role, content: m.content })),
+              ...formatMessagesForAPI(updatedMessages),
             ],
           }),
         });
@@ -458,6 +499,15 @@ const Index = () => {
                                 </div>
                               </Collapsible>
                             )}
+                            {message.image && (
+                              <div className="mb-3">
+                                <img 
+                                  src={message.image} 
+                                  alt="Uploaded" 
+                                  className="max-w-sm rounded-lg border border-border"
+                                />
+                              </div>
+                            )}
                             <div className="prose prose-invert prose-sm max-w-none">
                               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                                 {message.content}
@@ -519,7 +569,39 @@ const Index = () => {
                         </span>
                       )}
                     </div>
+                    {uploadedImage && (
+                      <div className="relative inline-block animate-fade-in">
+                        <img 
+                          src={uploadedImage} 
+                          alt="Preview" 
+                          className="max-h-32 rounded-lg border border-border"
+                        />
+                        <Button
+                          variant="destructive"
+                          size="icon"
+                          className="absolute -top-2 -right-2 h-6 w-6 rounded-full"
+                          onClick={() => setUploadedImage(null)}
+                        >
+                          <Icon name="X" size={14} />
+                        </Button>
+                      </div>
+                    )}
                     <div className="flex gap-2">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      className="hidden"
+                      id="image-upload"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-[60px] w-[60px] rounded-full"
+                      onClick={() => document.getElementById('image-upload')?.click()}
+                    >
+                      <Icon name="Image" size={20} />
+                    </Button>
                     <Textarea
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
@@ -534,7 +616,7 @@ const Index = () => {
                     />
                     <Button
                       onClick={sendMessage}
-                      disabled={!input.trim() || isLoading}
+                      disabled={(!input.trim() && !uploadedImage) || isLoading}
                       size="icon"
                       className="h-[60px] w-[60px] rounded-full"
                     >
@@ -650,7 +732,7 @@ const Index = () => {
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="model">Модель</Label>
+                      <Label htmlFor="model">Текстовая модель</Label>
                       <Select value={selectedModel} onValueChange={setSelectedModel}>
                         <SelectTrigger id="model">
                           <SelectValue />
@@ -664,6 +746,22 @@ const Index = () => {
                           <SelectItem value="open-mixtral-8x22b">Open Mixtral 8x22B</SelectItem>
                         </SelectContent>
                       </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="visionModel">Модель для изображений</Label>
+                      <Select value={visionModel} onValueChange={setVisionModel}>
+                        <SelectTrigger id="visionModel">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pixtral-12b-2409">Pixtral 12B</SelectItem>
+                          <SelectItem value="pixtral-large-latest">Pixtral Large</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Используется автоматически при загрузке изображений
+                      </p>
                     </div>
 
                     <div className="flex items-center justify-between space-x-2 pt-2">
