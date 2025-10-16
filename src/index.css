@@ -75,4 +75,73 @@
   .message-ai {
     background: hsl(var(--card));
   }
+
+  .prose {
+    color: inherit;
+  }
+
+  .prose strong {
+    font-weight: 700;
+    color: inherit;
+  }
+
+  .prose em {
+    font-style: italic;
+    color: inherit;
+  }
+
+  .prose code {
+    background: hsl(var(--muted));
+    padding: 0.2em 0.4em;
+    border-radius: 0.25rem;
+    font-size: 0.875em;
+    font-family: "Courier New", monospace;
+  }
+
+  .prose pre {
+    background: hsl(var(--muted));
+    padding: 1rem;
+    border-radius: 0.5rem;
+    overflow-x: auto;
+  }
+
+  .prose pre code {
+    background: transparent;
+    padding: 0;
+  }
+
+  .prose a {
+    color: hsl(var(--primary));
+    text-decoration: underline;
+  }
+
+  .prose ul,
+  .prose ol {
+    margin: 0.5rem 0;
+    padding-left: 1.5rem;
+  }
+
+  .prose li {
+    margin: 0.25rem 0;
+  }
+
+  .prose p {
+    margin: 0.5rem 0;
+  }
+
+  .prose h1,
+  .prose h2,
+  .prose h3,
+  .prose h4 {
+    font-weight: 600;
+    margin-top: 1rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .prose blockquote {
+    border-left: 3px solid hsl(var(--primary));
+    padding-left: 1rem;
+    font-style: italic;
+    opacity: 0.9;
+  }
 }

@@ -6,12 +6,18 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import Icon from '@/components/ui/icon';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  thinking?: string;
   timestamp: Date;
 }
 
@@ -49,6 +55,9 @@ const Index = () => {
   const [apiKey, setApiKey] = useState('GkzSKt3IGn02tS5qFOi1qS51vfgw2zOE');
   const [userName, setUserName] = useState('Пользователь');
   const [systemPrompt, setSystemPrompt] = useState('Ты полезный ИИ-ассистент.');
+  const [thinkingMode, setThinkingMode] = useState(false);
+  const [selectedModel, setSelectedModel] = useState('mistral-small-latest');
+  const [expandedThinking, setExpandedThinking] = useState<Record<string, boolean>>({});
 
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
@@ -70,6 +79,7 @@ const Index = () => {
       id: aiMessageId,
       role: 'assistant',
       content: '',
+      thinking: thinkingMode ? '' : undefined,
       timestamp: new Date(),
     };
 
@@ -77,66 +87,186 @@ const Index = () => {
     setCurrentSession({ ...currentSession, messages: messagesWithAI });
 
     try {
-      const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'mistral-small-latest',
-          stream: true,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            ...updatedMessages.map(m => ({ role: m.role, content: m.content })),
-          ],
-        }),
-      });
+      if (thinkingMode) {
+        const thinkingResponse = await fetch('https://api.mistral.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: selectedModel,
+            stream: true,
+            messages: [
+              { role: 'system', content: 'Ты рассуждаешь вслух. Опиши свой процесс мышления пошагово: что ты понял из вопроса, какие варианты рассматриваешь, как будешь отвечать.' },
+              ...updatedMessages.map(m => ({ role: m.role, content: m.content })),
+            ],
+          }),
+        });
 
-      if (!response.body) throw new Error('No response body');
+        if (!thinkingResponse.body) throw new Error('No response body');
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let accumulatedContent = '';
+        const thinkingReader = thinkingResponse.body.getReader();
+        const thinkingDecoder = new TextDecoder();
+        let accumulatedThinking = '';
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+        while (true) {
+          const { done, value } = await thinkingReader.read();
+          if (done) break;
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
+          const chunk = thinkingDecoder.decode(value);
+          const lines = chunk.split('\n');
 
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            if (data === '[DONE]') continue;
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6);
+              if (data === '[DONE]') continue;
 
-            try {
-              const parsed = JSON.parse(data);
-              const content = parsed.choices[0]?.delta?.content;
-              
-              if (content) {
-                accumulatedContent += content;
+              try {
+                const parsed = JSON.parse(data);
+                const content = parsed.choices[0]?.delta?.content;
                 
-                setCurrentSession(prev => ({
-                  ...prev,
-                  messages: prev.messages.map(m =>
-                    m.id === aiMessageId ? { ...m, content: accumulatedContent } : m
-                  ),
-                }));
+                if (content) {
+                  accumulatedThinking += content;
+                  
+                  setCurrentSession(prev => ({
+                    ...prev,
+                    messages: prev.messages.map(m =>
+                      m.id === aiMessageId ? { ...m, thinking: accumulatedThinking } : m
+                    ),
+                  }));
+                }
+              } catch (e) {
+                continue;
               }
-            } catch (e) {
-              continue;
             }
           }
         }
-      }
 
-      setSessions(prev => prev.map(s => 
-        s.id === currentSession.id 
-          ? { ...s, messages: messagesWithAI.map(m => m.id === aiMessageId ? { ...m, content: accumulatedContent } : m) } 
-          : s
-      ));
+        const finalResponse = await fetch('https://api.mistral.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: selectedModel,
+            stream: true,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              ...updatedMessages.map(m => ({ role: m.role, content: m.content })),
+              { role: 'assistant', content: `Мои размышления: ${accumulatedThinking}` },
+              { role: 'user', content: 'Теперь дай краткий и понятный ответ на основе своих размышлений.' },
+            ],
+          }),
+        });
+
+        if (!finalResponse.body) throw new Error('No response body');
+
+        const finalReader = finalResponse.body.getReader();
+        const finalDecoder = new TextDecoder();
+        let accumulatedContent = '';
+
+        while (true) {
+          const { done, value } = await finalReader.read();
+          if (done) break;
+
+          const chunk = finalDecoder.decode(value);
+          const lines = chunk.split('\n');
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6);
+              if (data === '[DONE]') continue;
+
+              try {
+                const parsed = JSON.parse(data);
+                const content = parsed.choices[0]?.delta?.content;
+                
+                if (content) {
+                  accumulatedContent += content;
+                  
+                  setCurrentSession(prev => ({
+                    ...prev,
+                    messages: prev.messages.map(m =>
+                      m.id === aiMessageId ? { ...m, content: accumulatedContent } : m
+                    ),
+                  }));
+                }
+              } catch (e) {
+                continue;
+              }
+            }
+          }
+        }
+
+        setSessions(prev => prev.map(s => 
+          s.id === currentSession.id 
+            ? { ...s, messages: messagesWithAI.map(m => m.id === aiMessageId ? { ...m, content: accumulatedContent, thinking: accumulatedThinking } : m) } 
+            : s
+        ));
+      } else {
+        const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: selectedModel,
+            stream: true,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              ...updatedMessages.map(m => ({ role: m.role, content: m.content })),
+            ],
+          }),
+        });
+
+        if (!response.body) throw new Error('No response body');
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let accumulatedContent = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n');
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6);
+              if (data === '[DONE]') continue;
+
+              try {
+                const parsed = JSON.parse(data);
+                const content = parsed.choices[0]?.delta?.content;
+                
+                if (content) {
+                  accumulatedContent += content;
+                  
+                  setCurrentSession(prev => ({
+                    ...prev,
+                    messages: prev.messages.map(m =>
+                      m.id === aiMessageId ? { ...m, content: accumulatedContent } : m
+                    ),
+                  }));
+                }
+              } catch (e) {
+                continue;
+              }
+            }
+          }
+        }
+
+        setSessions(prev => prev.map(s => 
+          s.id === currentSession.id 
+            ? { ...s, messages: messagesWithAI.map(m => m.id === aiMessageId ? { ...m, content: accumulatedContent } : m) } 
+            : s
+        ));
+      }
     } catch (error) {
       console.error('Error:', error);
       setCurrentSession(prev => ({
@@ -267,7 +397,41 @@ const Index = () => {
                                 : 'message-ai'
                             }`}
                           >
-                            <p className="whitespace-pre-wrap">{message.content}</p>
+                            {message.thinking && (
+                              <Collapsible
+                                open={expandedThinking[message.id]}
+                                onOpenChange={(open) =>
+                                  setExpandedThinking(prev => ({ ...prev, [message.id]: open }))
+                                }
+                                className="mb-3"
+                              >
+                                <div className="border border-primary/30 rounded-lg p-3 bg-primary/5">
+                                  <CollapsibleTrigger className="flex items-center justify-between w-full text-left hover:opacity-80">
+                                    <span className="text-sm font-medium text-primary flex items-center gap-2">
+                                      <Icon name="Brain" size={16} />
+                                      Думаю...
+                                    </span>
+                                    <Icon 
+                                      name={expandedThinking[message.id] ? "ChevronUp" : "ChevronDown"} 
+                                      size={16} 
+                                      className="text-primary"
+                                    />
+                                  </CollapsibleTrigger>
+                                  <CollapsibleContent className="mt-2">
+                                    <div className="text-sm text-muted-foreground prose prose-invert prose-sm max-w-none">
+                                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                        {message.thinking}
+                                      </ReactMarkdown>
+                                    </div>
+                                  </CollapsibleContent>
+                                </div>
+                              </Collapsible>
+                            )}
+                            <div className="prose prose-invert prose-sm max-w-none">
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                {message.content}
+                              </ReactMarkdown>
+                            </div>
                             <span className="text-xs opacity-70 mt-2 block">
                               {message.timestamp.toLocaleTimeString('ru-RU', {
                                 hour: '2-digit',
@@ -419,6 +583,39 @@ const Index = () => {
                         value={userName}
                         onChange={(e) => setUserName(e.target.value)}
                         placeholder="Ваше имя"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="model">Модель</Label>
+                      <Select value={selectedModel} onValueChange={setSelectedModel}>
+                        <SelectTrigger id="model">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="mistral-small-latest">Mistral Small</SelectItem>
+                          <SelectItem value="mistral-medium-latest">Mistral Medium</SelectItem>
+                          <SelectItem value="mistral-large-latest">Mistral Large</SelectItem>
+                          <SelectItem value="open-mistral-7b">Open Mistral 7B</SelectItem>
+                          <SelectItem value="open-mixtral-8x7b">Open Mixtral 8x7B</SelectItem>
+                          <SelectItem value="open-mixtral-8x22b">Open Mixtral 8x22B</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="flex items-center justify-between space-x-2 pt-2">
+                      <div className="space-y-0.5">
+                        <Label htmlFor="thinking-mode" className="text-base">
+                          Режим размышлений
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                          ИИ сначала обдумает ответ, потом даст его
+                        </p>
+                      </div>
+                      <Switch
+                        id="thinking-mode"
+                        checked={thinkingMode}
+                        onCheckedChange={setThinkingMode}
                       />
                     </div>
                     
